@@ -25,8 +25,8 @@ commands (strings must be quoted, ids are bare numbers):
   diary delete <id>
 
   sleep list
-  sleep add "2026-10-19T23:30:00"
-  sleep wakeup <id> "2026-10-20T07:00:00"
+  sleep add now
+  sleep wakeup <id> now
   sleep delete <id>
 
   reminders list
@@ -120,7 +120,7 @@ def main():
             continue
 
         # --- single quoted string: todos, goals, diary, sleep, eatings, ideas ---
-        single_str_cmds = ("todos add", "goals add", "diary add", "sleep add",
+        single_str_cmds = ("todos add", "goals add", "diary add",
                            "eatings add", "ideas add")
         if command in single_str_cmds:
             if len(args) != 1:
@@ -132,13 +132,25 @@ def main():
                 continue
             if resource == "diary":
                 field = "body"
-            elif resource == "sleep":
-                field = "slept_at"
             elif resource == "eatings":
                 field = "description"
             else:
                 field = "title"
             call("POST", f"/{resource}", {field: value})
+            continue
+
+        # --- sleep add: a quoted datetime, or the bare word now ---
+        if command == "sleep add":
+            if len(args) != 1:
+                print('sleep add takes "now" or one quoted datetime: sleep add now')
+                continue
+            when = args[0]
+            if when.lower() != "now":
+                when = expect(when, "str")
+                if when is None:
+                    warn("sleep add", args[0], "str")
+                    continue
+            call("POST", "/sleep", {"slept_at": when})
             continue
 
         # --- reminders add: title then datetime ---
@@ -221,19 +233,21 @@ def main():
             call(method, path.replace("{id}", str(number)))
             continue
 
-        # --- sleep wakeup: id then datetime ---
+        # --- sleep wakeup: id then a datetime, or the bare word now ---
         if command == "sleep wakeup":
             if len(args) != 2:
-                print('sleep wakeup takes a number then a quoted string: sleep wakeup 5 "2026-10-20T07:00:00"')
+                print('sleep wakeup takes a number then "now" or a quoted datetime: sleep wakeup 5 now')
                 continue
             number = expect(args[0], "int")
             if number is None:
                 warn("sleep wakeup (id)", args[0], "int")
                 continue
-            when = expect(args[1], "str")
-            if when is None:
-                warn("sleep wakeup (woke_at)", args[1], "str")
-                continue
+            when = args[1]
+            if when.lower() != "now":
+                when = expect(when, "str")
+                if when is None:
+                    warn("sleep wakeup (woke_at)", args[1], "str")
+                    continue
             call("PATCH", f"/sleep/{number}/wakeup", {"woke_at": when})
             continue
 

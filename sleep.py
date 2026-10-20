@@ -1,24 +1,35 @@
-from fastapi import APIRouter, HTTPException  # APIRouter for this feature, HTTPException for error responses
-from pydantic import BaseModel               # defines the shape of incoming data
-from datetime import datetime                # Python's built-in datetime type — needed for slept_at and woke_at
-from database import get_connection          # shared connection function
+from fastapi import APIRouter, HTTPException # APIRouter for this feature, HTTPException for error responses
+from pydantic import BaseModel # defines the shape of incoming data
+from datetime import datetime, timezone # datetime type for slept_at and woke_at
+from typing import Optional
+from database import get_connection # shared connection function
 
 router = APIRouter()
 
 
+def resolve_time(value):
+    """'now' means the current UTC time; anything else is parsed as a datetime."""
+    if isinstance(value, str) and value.strip().lower() == "now":
+        return datetime.now(timezone.utc)
+    try:
+        return datetime.fromisoformat(value)
+    except ValueError:
+        raise HTTPException(status_code=422, detail=f"not a datetime or 'now': {value}")
+
+
 # data the user sends when logging sleep
-# slept_at: when they went to sleep — required
+# slept_at: when they went to sleep — required. a datetime, or the word "now"
 # woke_at: when they woke up — optional (maybe they're logging before waking)
 # notes: anything extra like "had bad dreams" — optional
 class SleepCreate(BaseModel):
-    slept_at: datetime          # e.g. "2024-01-15T23:30:00"
-    woke_at: datetime = None    # optional
-    notes: str = None           # optional
+    slept_at: str  # e.g. "2026-10-19T23:30:00" or "now"
+    woke_at: Optional[str] = None  # optional datetime, or "now"
+    notes: str = None  # optional
 
 
 # data the user sends when they wake up (updating an existing log)
 class SleepWakeUp(BaseModel):
-    woke_at: datetime  # required — that's the whole point of this update
+    woke_at: str  # a datetime, or the word "now"
 
 
 # --- GET /sleep ---
@@ -29,7 +40,7 @@ def get_sleep_logs():
     cur = conn.cursor()
 
     cur.execute("SELECT id, slept_at, woke_at, notes, created_at FROM sleep_logs ORDER BY slept_at DESC")
-    rows = cur.fetchall()  # list of tuples
+    rows = cur.fetchall() # list of tuples
 
     cur.close()
     conn.close()
@@ -38,7 +49,7 @@ def get_sleep_logs():
         {
             "id": row[0],
             "slept_at": row[1],
-            "woke_at": row[2],   # will be None if not set yet
+            "woke_at": row[2], # will be None if not set yet
             "notes": row[3],
             "created_at": row[4]
         }
@@ -54,22 +65,25 @@ def log_sleep(sleep: SleepCreate):
     conn = get_connection()
     cur = conn.cursor()
 
+    slept_at = resolve_time(sleep.slept_at)
+    woke_at = resolve_time(sleep.woke_at) if sleep.woke_at else None
+
     cur.execute(
         # %s placeholders keep it safe from SQL injection
         # RETURNING gets back the new row's id and created_at without a second query
         "INSERT INTO sleep_logs (slept_at, woke_at, notes) VALUES (%s, %s, %s) RETURNING id, created_at",
-        (sleep.slept_at, sleep.woke_at, sleep.notes)
+        (slept_at, woke_at, sleep.notes)
     )
     new_id, created_at = cur.fetchone()
 
-    conn.commit()  # save permanently
+    conn.commit() # save permanently
     cur.close()
     conn.close()
 
     return {
         "id": new_id,
-        "slept_at": sleep.slept_at,
-        "woke_at": sleep.woke_at,
+        "slept_at": slept_at,
+        "woke_at": woke_at,
         "notes": sleep.notes,
         "created_at": created_at
     }
@@ -79,15 +93,15 @@ def log_sleep(sleep: SleepCreate):
 # updates an existing sleep log with the wake-up time
 # useful when you log sleep at night and then log wake time in the morning
 @router.patch("/sleep/{log_id}/wakeup")
-def set_wakeup(log_id: int, data: SleepWakeUp):  # log_id from URL, data from request body
+def set_wakeup(log_id: int, data: SleepWakeUp): # log_id from URL, data from request body
     conn = get_connection()
     cur = conn.cursor()
 
     cur.execute(
         "UPDATE sleep_logs SET woke_at = %s WHERE id = %s",
-        (data.woke_at, log_id)
+        (resolve_time(data.woke_at), log_id)
     )
-    updated = cur.rowcount  # 0 = that id didn't exist
+    updated = cur.rowcount # 0 = that id didn't exist
 
     conn.commit()
     cur.close()
