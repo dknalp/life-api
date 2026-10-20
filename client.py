@@ -5,7 +5,7 @@ import os
 import requests
 
 # override with API_BASE env var, e.g. export API_BASE=http://192.168.0.115:8000
-BASE = os.environ.get("API_BASE", "http://localhost:8000")
+BASE = os.environ.get("API_BASE", "http://192.168.0.101:8000")
 
 HELP = """
 commands (strings must be quoted, ids are bare numbers):
@@ -50,9 +50,6 @@ commands (strings must be quoted, ids are bare numbers):
   ideas add "my cool idea"
   ideas delete <id>
 
-  special-dates list
-  special-dates add "Dad's birthday" "1960-05-15" "birthday"
-  special-dates delete <id>
 
   help
   q
@@ -114,7 +111,7 @@ def main():
 
         # --- list: no arguments, just GET ---
         list_resources = ("todos", "goals", "diary", "sleep", "reminders",
-                          "sport", "eatings", "steps", "ideas", "special-dates")
+                          "sport", "eatings", "steps", "ideas")
         if action == "list" and resource in list_resources:
             if args:
                 print(f"{command} takes no arguments")
@@ -197,26 +194,6 @@ def main():
             call("POST", "/steps", {"steps": count, "recorded_on": day})
             continue
 
-        # --- special-dates add: title, date, category ---
-        if command == "special-dates add":
-            if len(args) != 3:
-                print('special-dates add takes three quoted strings: special-dates add "Dad\'s birthday" "1960-05-15" "birthday"')
-                continue
-            title = expect(args[0], "str")
-            if title is None:
-                warn("special-dates add (title)", args[0], "str")
-                continue
-            occ = expect(args[1], "str")
-            if occ is None:
-                warn("special-dates add (occasion_date)", args[1], "str")
-                continue
-            cat = expect(args[2], "str")
-            if cat is None:
-                warn("special-dates add (category)", args[2], "str")
-                continue
-            call("POST", "/special-dates", {"title": title, "occasion_date": occ, "category": cat})
-            continue
-
         # --- single number: done / delete / sent ---
         single_id = {
             "todos done":         ("PATCH",  "/todos/{id}/done"),
@@ -231,7 +208,6 @@ def main():
             "eatings delete":     ("DELETE", "/eatings/{id}"),
             "steps delete":       ("DELETE", "/steps/{id}"),
             "ideas delete":       ("DELETE", "/ideas/{id}"),
-            "special-dates delete": ("DELETE", "/special-dates/{id}"),
         }
         if command in single_id:
             if len(args) != 1:

@@ -37,13 +37,3 @@ CREATE TABLE IF NOT EXISTS ideas (
     body       TEXT,
     created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
-
--- special_dates: birthdays, anniversaries, recurring important dates
-CREATE TABLE IF NOT EXISTS special_dates (
-    id            SERIAL PRIMARY KEY,
-    title         TEXT NOT NULL,
-    occasion_date DATE NOT NULL,
-    category      TEXT NOT NULL,  -- birthday | anniversary | other
-    person        TEXT,
-    created_at    TIMESTAMPTZ NOT NULL DEFAULT NOW()
-);

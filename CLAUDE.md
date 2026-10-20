@@ -57,13 +57,12 @@ Endpoints and the tables they hit:
 | `eatings.py` | `GET/POST /eatings`, `DELETE /eatings/{id}` | `eatings` (description, meal_type, calories, eaten_at) |
 | `steps.py` | `GET/POST /steps`, `DELETE /steps/{id}` | `step_logs` (steps, recorded_on, notes) |
 | `ideas.py` | `GET/POST /ideas`, `DELETE /ideas/{id}` | `ideas` (title, body) |
-| `special_dates.py` | `GET/POST /special-dates`, `DELETE /special-dates/{id}` | `special_dates` (title, occasion_date, category, person) |
 
 Two places diverge from that pattern:
 
 - `PATCH /diary/{id}` builds the `SET` clause from whichever of `title` and `body` was sent. Column names come from a fixed dict of those two fields, then values are bound with `%s`. An empty body is a 400.
 - `GET /reminders/pending` filters `is_sent = FALSE AND remind_at > NOW()`. Nothing in this repo sends reminders; `PATCH /reminders/{id}/sent` only flips the flag after something else has shown it.
 
-`schema.sql` defines `sport_days`, `eatings`, `step_logs`, `ideas`, and `special_dates`. Apply once with `psql "$DB_NAME" -f schema.sql`. The older tables (goals, todos, sleep_logs, diary, reminders) are assumed to already exist with the columns the `SELECT` lists (`id`, `created_at`, plus the fields above). `is_done` and `is_sent` default to false in the database; inserts never set them.
+`schema.sql` defines `sport_days`, `eatings`, `step_logs`, and `ideas`. Apply once with `psql "$DB_NAME" -f schema.sql`. The older tables (goals, todos, sleep_logs, diary, reminders) are assumed to already exist with the columns the `SELECT` lists (`id`, `created_at`, plus the fields above). `is_done` and `is_sent` default to false in the database; inserts never set them.
 
-`client.py` is a REPL, not part of the server. It parses a line with `shlex`, then dispatches by command shape: no-arg `list`, one quoted string (`todos/goals/diary/sleep add`), two quoted strings (`reminders add`), one bare id (done/delete/sent), or id plus quoted timestamp (`sleep wakeup`). It prints the status code and JSON. It does not cover `GET /diary/{id}`, `PATCH /diary/{id}`, `GET /reminders/pending`, or optional fields like `duration_minutes`, `calories`, `meal_type`. `steps add` and `special-dates add` take two and three quoted strings respectively.
+`client.py` is a REPL, not part of the server. It parses a line with `shlex`, then dispatches by command shape: no-arg `list`, one quoted string (`todos/goals/diary/sleep add`), two quoted strings (`reminders add`), one bare id (done/delete/sent), or id plus quoted timestamp (`sleep wakeup`). It prints the status code and JSON. It does not cover `GET /diary/{id}`, `PATCH /diary/{id}`, `GET /reminders/pending`, or optional fields like `duration_minutes`, `calories`, `meal_type`. `steps add` takes a quoted count then a quoted date.
