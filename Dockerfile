@@ -5,7 +5,7 @@ WORKDIR /app
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
-COPY main.py database.py goals.py todos.py sleep.py diary.py reminders.py ./
+COPY main.py database.py goals.py todos.py sleep.py diary.py reminders.py sport.py eatings.py steps.py ideas.py special_dates.py ./
 
 EXPOSE 8000
 

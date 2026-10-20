@@ -1,9 +1,11 @@
 #!/usr/bin/env python3
 import json
 import shlex
+import os
 import requests
 
-BASE = "http://localhost:8000"
+# override with API_BASE env var, e.g. export API_BASE=http://192.168.0.115:8000
+BASE = os.environ.get("API_BASE", "http://localhost:8000")
 
 HELP = """
 commands (strings must be quoted, ids are bare numbers):
@@ -32,6 +34,26 @@ commands (strings must be quoted, ids are bare numbers):
   reminders sent <id>
   reminders delete <id>
 
+  sport list
+  sport add "run" "2026-10-20"
+  sport delete <id>
+
+  eatings list
+  eatings add "oatmeal with banana"
+  eatings delete <id>
+
+  steps list
+  steps add "10000" "2026-10-20"
+  steps delete <id>
+
+  ideas list
+  ideas add "my cool idea"
+  ideas delete <id>
+
+  special-dates list
+  special-dates add "Dad's birthday" "1960-05-15" "birthday"
+  special-dates delete <id>
+
   help
   q
 """
@@ -39,7 +61,7 @@ commands (strings must be quoted, ids are bare numbers):
 
 def expect(value, kind):
     """Return the parsed value, or None when the quoting doesn't match the kind."""
-    quoted = len(value) >= 2 and value[0] == value[-1] and value[0] in "\"'"
+    quoted = len(value) >= 2 and value[0] == value[-1] and value[0] in "\"\'"
     if kind == "int":
         if quoted or not value.isdigit():
             return None
@@ -51,7 +73,7 @@ def expect(value, kind):
 
 def warn(command, value, kind):
     wanted = "a number" if kind == "int" else "a quoted string"
-    got = "a string" if value[:1] in "\"'" else "a number" if value.isdigit() else "unquoted text"
+    got = "a string" if value[:1] in "\"\'" else "a number" if value.isdigit() else "unquoted text"
     print(f"{command} takes {wanted}, got {got}: {value}")
 
 
@@ -91,15 +113,19 @@ def main():
         command = f"{resource} {action}".strip()
 
         # --- list: no arguments, just GET ---
-        if action == "list" and resource in ("todos", "goals", "diary", "sleep", "reminders"):
+        list_resources = ("todos", "goals", "diary", "sleep", "reminders",
+                          "sport", "eatings", "steps", "ideas", "special-dates")
+        if action == "list" and resource in list_resources:
             if args:
                 print(f"{command} takes no arguments")
                 continue
             call("GET", f"/{resource}")
             continue
 
-        # --- single quoted string ---
-        if command in ("todos add", "goals add", "diary add", "sleep add"):
+        # --- single quoted string: todos, goals, diary, sleep, eatings, ideas ---
+        single_str_cmds = ("todos add", "goals add", "diary add", "sleep add",
+                           "eatings add", "ideas add")
+        if command in single_str_cmds:
             if len(args) != 1:
                 print(f'{command} takes one quoted string, e.g. {command} "something"')
                 continue
@@ -107,11 +133,18 @@ def main():
             if value is None:
                 warn(command, args[0], "str")
                 continue
-            field = "body" if resource == "diary" else "slept_at" if resource == "sleep" else "title"
+            if resource == "diary":
+                field = "body"
+            elif resource == "sleep":
+                field = "slept_at"
+            elif resource == "eatings":
+                field = "description"
+            else:
+                field = "title"
             call("POST", f"/{resource}", {field: value})
             continue
 
-        # --- reminders add: two quoted strings ---
+        # --- reminders add: title then datetime ---
         if command == "reminders add":
             if len(args) != 2:
                 print('reminders add takes two quoted strings: reminders add "title" "2026-10-20T09:00:00"')
@@ -127,16 +160,78 @@ def main():
             call("POST", "/reminders", {"title": title, "remind_at": when})
             continue
 
-        # --- single number ---
+        # --- sport add: activity then date ---
+        if command == "sport add":
+            if len(args) != 2:
+                print('sport add takes two quoted strings: sport add "run" "2026-10-20"')
+                continue
+            activity = expect(args[0], "str")
+            if activity is None:
+                warn("sport add (activity)", args[0], "str")
+                continue
+            day = expect(args[1], "str")
+            if day is None:
+                warn("sport add (done_on)", args[1], "str")
+                continue
+            call("POST", "/sport", {"activity": activity, "done_on": day})
+            continue
+
+        # --- steps add: count then date ---
+        if command == "steps add":
+            if len(args) != 2:
+                print('steps add takes a number then a quoted date: steps add "10000" "2026-10-20"')
+                continue
+            count = expect(args[0], "str")   # comes in quoted, e.g. "10000"
+            if count is None:
+                warn("steps add (steps)", args[0], "str")
+                continue
+            day = expect(args[1], "str")
+            if day is None:
+                warn("steps add (recorded_on)", args[1], "str")
+                continue
+            try:
+                count = int(count)
+            except ValueError:
+                print(f"steps add: steps must be a number, got: {count}")
+                continue
+            call("POST", "/steps", {"steps": count, "recorded_on": day})
+            continue
+
+        # --- special-dates add: title, date, category ---
+        if command == "special-dates add":
+            if len(args) != 3:
+                print('special-dates add takes three quoted strings: special-dates add "Dad\'s birthday" "1960-05-15" "birthday"')
+                continue
+            title = expect(args[0], "str")
+            if title is None:
+                warn("special-dates add (title)", args[0], "str")
+                continue
+            occ = expect(args[1], "str")
+            if occ is None:
+                warn("special-dates add (occasion_date)", args[1], "str")
+                continue
+            cat = expect(args[2], "str")
+            if cat is None:
+                warn("special-dates add (category)", args[2], "str")
+                continue
+            call("POST", "/special-dates", {"title": title, "occasion_date": occ, "category": cat})
+            continue
+
+        # --- single number: done / delete / sent ---
         single_id = {
-            "todos done": ("PATCH", "/todos/{id}/done"),
-            "todos delete": ("DELETE", "/todos/{id}"),
-            "goals done": ("PATCH", "/goals/{id}/done"),
-            "goals delete": ("DELETE", "/goals/{id}"),
-            "diary delete": ("DELETE", "/diary/{id}"),
-            "sleep delete": ("DELETE", "/sleep/{id}"),
-            "reminders sent": ("PATCH", "/reminders/{id}/sent"),
-            "reminders delete": ("DELETE", "/reminders/{id}"),
+            "todos done":         ("PATCH",  "/todos/{id}/done"),
+            "todos delete":       ("DELETE", "/todos/{id}"),
+            "goals done":         ("PATCH",  "/goals/{id}/done"),
+            "goals delete":       ("DELETE", "/goals/{id}"),
+            "diary delete":       ("DELETE", "/diary/{id}"),
+            "sleep delete":       ("DELETE", "/sleep/{id}"),
+            "reminders sent":     ("PATCH",  "/reminders/{id}/sent"),
+            "reminders delete":   ("DELETE", "/reminders/{id}"),
+            "sport delete":       ("DELETE", "/sport/{id}"),
+            "eatings delete":     ("DELETE", "/eatings/{id}"),
+            "steps delete":       ("DELETE", "/steps/{id}"),
+            "ideas delete":       ("DELETE", "/ideas/{id}"),
+            "special-dates delete": ("DELETE", "/special-dates/{id}"),
         }
         if command in single_id:
             if len(args) != 1:
@@ -150,7 +245,7 @@ def main():
             call(method, path.replace("{id}", str(number)))
             continue
 
-        # --- sleep wakeup: number then quoted string ---
+        # --- sleep wakeup: id then datetime ---
         if command == "sleep wakeup":
             if len(args) != 2:
                 print('sleep wakeup takes a number then a quoted string: sleep wakeup 5 "2026-10-20T07:00:00"')
